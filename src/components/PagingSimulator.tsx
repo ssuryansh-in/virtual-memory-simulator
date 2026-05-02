@@ -14,7 +14,53 @@ export function PagingSimulator() {
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
 
+  const handleReset = () => {
+    setPageString("");
+    setFrames(3);
+    setResult(null);
+    setComparison(null);
+    setCurrentStep(-1);
+  };
+
+  const getInsight = () => {
+    if (!result || !comparison) return null;
+    const { FIFO, LRU, OPTIMAL } = comparison;
+    const currentFaults = comparison[algo as keyof PagingComparison];
+    
+    const minFaults = Math.min(FIFO, LRU, OPTIMAL);
+    const isBest = currentFaults === minFaults;
+
+    if (FIFO === LRU && LRU === OPTIMAL) {
+      return "Algorithm performance converges for this specific reference string.";
+    }
+    
+    if (algo === "OPTIMAL" && isBest) {
+      return "Optimal algorithm minimizes faults by having perfect knowledge of future requests.";
+    }
+    
+    if (LRU < FIFO && algo === "LRU") {
+      return "LRU is outperforming FIFO by exploiting temporal locality in the input.";
+    }
+
+    if (FIFO < LRU && algo === "FIFO") {
+      return "FIFO is performing better than LRU for this specific memory workload.";
+    }
+
+    const efficiency = ((result.steps.length - result.total_page_faults) / result.steps.length) * 100;
+    if (efficiency < 30) {
+      return "Low efficiency detected. Increasing physical frames may reduce thrashing.";
+    }
+    
+    if (isBest) {
+      return `${algo} is currently the most efficient strategy for this workload.`;
+    }
+
+    const betterAlgo = OPTIMAL < currentFaults ? 'Optimal' : (LRU < currentFaults ? 'LRU' : 'FIFO');
+    return `Note: ${betterAlgo} would reduce page faults for this specific reference string.`;
+  };
+
   const handleSimulate = async () => {
+    if (!pageString.trim()) return;
     setLoading(true);
     try {
       const pages = pageString.split(",").map((s) => parseInt(s.trim())).filter((n) => !isNaN(n));
@@ -99,14 +145,26 @@ export function PagingSimulator() {
               </div>
             </div>
 
-            <button 
-              onClick={handleSimulate}
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-500 active:scale-[0.97] disabled:bg-zinc-800 text-white font-black uppercase tracking-[0.2em] text-[10px] py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-[0_20px_40px_-15px_rgba(37,99,235,0.4)]"
-            >
-              {loading ? "Processing..." : "Compute Simulation"}
-              {!loading && <Play className="w-3 h-3 fill-current" />}
-            </button>
+            <div className="flex gap-3">
+              <button 
+                onClick={handleSimulate}
+                disabled={loading || !pageString.trim()}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 active:scale-[0.97] disabled:bg-zinc-800 text-white font-black uppercase tracking-[0.2em] text-[10px] py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-[0_20px_40px_-15px_rgba(37,99,235,0.4)]"
+              >
+                {loading ? "Processing..." : "Compute Simulation"}
+                {!loading && <Play className="w-3 h-3 fill-current" />}
+              </button>
+              <button 
+                onClick={handleReset}
+                className="px-6 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-white rounded-2xl transition-all flex items-center justify-center transform active:scale-95"
+                title="Reset Simulation"
+              >
+                <div className="flex flex-col items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-zinc-600 group-hover:bg-blue-500" />
+                  <span className="text-[8px] font-black uppercase tracking-tighter">CLR</span>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -194,6 +252,21 @@ export function PagingSimulator() {
               ))}
             </div>
 
+            <AnimatePresence>
+              {result && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="px-6 py-4 rounded-2xl bg-blue-600/5 border border-blue-500/20"
+                >
+                  <p className="text-[10px] font-black uppercase tracking-[0.1em] text-blue-400">
+                    <span className="mr-2">💡</span>
+                    {getInsight()}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Main Data Table */}
             <div className="glass-card rounded-[3rem] overflow-hidden border-zinc-800/30">
               <div className="overflow-x-auto">
@@ -215,7 +288,7 @@ export function PagingSimulator() {
                         transition={{ delay: idx * 0.02 }}
                         className={cn(
                           "transition-colors relative group",
-                          currentStep === idx ? "bg-blue-600/[0.03]" : "hover:bg-white/[0.01]"
+                          currentStep === idx ? "bg-blue-600/[0.08] shadow-[inset_4px_0_0_0_#3b82f6]" : "hover:bg-white/[0.01]"
                         )}
                         onMouseEnter={() => setCurrentStep(idx)}
                         onMouseLeave={() => setCurrentStep(-1)}
@@ -233,20 +306,26 @@ export function PagingSimulator() {
                         </td>
                         <td className="px-8 py-6">
                           <div className="flex gap-3">
-                            {step.frames.map((f, fidx) => (
-                              <motion.div 
-                                key={fidx}
-                                layout
-                                className={cn(
-                                  "w-12 h-12 rounded-xl flex items-center justify-center font-black text-xs border transition-all duration-300",
-                                  f === null ? "bg-zinc-950/20 border-zinc-900/50 text-zinc-800" : 
-                                  f === step.page && step.is_fault ? "bg-blue-600 border-blue-400 text-white shadow-xl shadow-blue-600/30 ring-4 ring-blue-600/10" :
-                                  "bg-zinc-900 border-zinc-800 text-zinc-300 group-hover:border-zinc-700"
-                                )}
-                              >
-                                {f === null ? "" : f}
-                              </motion.div>
-                            ))}
+                            {step.frames.map((f, fidx) => {
+                              const prevStep = result.steps[idx - 1];
+                              const isTargetFrame = step.is_fault && f === step.page && (!prevStep || prevStep.frames[fidx] !== f);
+                              
+                              return (
+                                <motion.div 
+                                  key={fidx}
+                                  layout
+                                  className={cn(
+                                    "w-12 h-12 rounded-xl flex items-center justify-center font-black text-xs border transition-all duration-300",
+                                    f === null ? "bg-zinc-950/20 border-zinc-900/50 text-zinc-800" : 
+                                    isTargetFrame ? "bg-red-600 border-red-400 text-white shadow-xl shadow-red-600/40 ring-4 ring-red-600/10 scale-110 z-10" :
+                                    f === step.page && !step.is_fault ? "bg-emerald-600/20 border-emerald-500/50 text-emerald-400" :
+                                    "bg-zinc-900 border-zinc-800 text-zinc-300 group-hover:border-zinc-700"
+                                  )}
+                                >
+                                  {f === null ? "" : f}
+                                </motion.div>
+                              );
+                            })}
                           </div>
                         </td>
                         <td className="px-8 py-6">
